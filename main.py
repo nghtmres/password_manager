@@ -1,15 +1,38 @@
 import json
+import secrets
+import string
+from cryptography.fernet import Fernet
+
+def load_key():
+    with open("secret.key", "rb") as file:
+        return file.read()
+
+key = load_key()
+cipher = Fernet(key)
 
 def add_password():
+        
     service = input("Enter the service name: ").strip().title()
     username = input("Enter the username: ").strip()
-    password = input("Enter the password: ").strip()
 
+    choice = input("Do you want to generate a password? (y/n): ").strip().lower()
+
+    if choice == "y":
+        password = generate_password()
+
+        if password is None:
+            return
+        
+    else:
+        password = input("Enter the password: ").strip()
+
+    encrypted_password = cipher.encrypt(password.encode()).decode()
     passwords.append({
         "service": service,
         "username": username,
-        "password": password
+        "password": encrypted_password
     })
+
     save_passwords()
     print(f"Password for {service} added successfully.")
 
@@ -21,7 +44,8 @@ def view_passwords():
 
     print("\nSaved Accounts:")
     for idx, entry in enumerate(passwords, start=1):
-        print(f"{idx}. Service: {entry["service"]}, Username: {entry["username"]}, Password: {entry["password"]}")
+        decrypted_password = cipher.decrypt(entry["password"].encode()).decode()
+        print(f"{idx}. Service: {entry['service']}, Username: {entry['username']}, Password: {decrypted_password}")
 
 def load_passwords():
 
@@ -45,10 +69,11 @@ def search_passwords():
 
     for entry in passwords:
         if entry["service"] == search_term:
+            decrypted_password = cipher.decrypt(entry["password"].encode()).decode()
             print(
                 f"Service: {entry['service']}, "
                 f"Username: {entry['username']}, "
-                f"Password: {entry['password']}"
+                f"Password: {decrypted_password}"
             )
             return
     print(f"No saved account found for {search_term}.")
@@ -72,8 +97,7 @@ def delete_password():
     for number, (idx, entry) in enumerate(matches, start=1):
         print(
             f"{number}. Service: {entry['service']}, "
-            f"Username: {entry['username']}, "
-            f"Password: {entry['password']}"
+            f"Username: {entry['username']}"
         )
 
     try:
@@ -97,6 +121,54 @@ def delete_password():
     save_passwords()
     print(f"Password for {delete_term} deleted successfully.")
 
+def edit_password():
+    if not passwords:
+        print("No saved accounts.")
+        return
+
+    for idx, entry in enumerate(passwords, start=1):
+        print(f"{idx}. Service: {entry['service']}, Username: {entry['username']}")
+
+    try:
+        choice = int(input("Enter the number of the account to edit: ")) - 1
+    except ValueError:
+        print("Invalid input.")
+        return
+
+    if choice < 0 or choice >= len(passwords):
+        print("Invalid choice.")
+        return
+
+    entry = passwords[choice]
+    print(f"Editing password for {entry['service']} ({entry['username']})")
+    new_password = input("Enter the new password: ").strip()
+    
+    if not new_password:
+        print("Password cannot be empty.")
+        return
+    
+    entry["password"] = cipher.encrypt(new_password.encode()).decode()
+    save_passwords()
+    print(f"Password for {entry['service']} updated successfully.")
+
+def generate_password():
+
+    try:
+        length = int(input("Enter the desired password length: "))
+    except ValueError:
+        print("Invalid input. Please enter a number.")
+        return
+
+    if length < 8:
+        print("Password length must be at least 8 characters.")
+        return
+    
+    characters = string.ascii_letters + string.digits + string.punctuation
+    password = ''.join(secrets.choice(characters) for _ in range(length))
+
+    print(f"Generated password: {password}")
+    return password
+
 passwords = load_passwords()
 
 def main():
@@ -107,7 +179,9 @@ def main():
         print("2. View saved accounts")
         print("3. Search passwords")
         print("4. Delete password")
-        print("5. Exit")
+        print("5. Edit password")
+        print("6. Generate password")
+        print("7. Exit")
 
         choice = input("Choose an option: ")
 
@@ -120,6 +194,10 @@ def main():
         elif choice == "4":
             delete_password()
         elif choice == "5":
+            edit_password()
+        elif choice == "6":
+            generate_password()
+        elif choice == "7":
             save_passwords()
             print("Exiting the program.")
             break
@@ -128,3 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
