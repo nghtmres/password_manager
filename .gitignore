@@ -1,2 +1,3 @@
 passwords.json
-secret.key
+salt.bin
+master.hash

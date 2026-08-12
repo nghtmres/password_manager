@@ -1,16 +1,28 @@
 import json
 import secrets
 import string
+import hashlib
+import base64
 from cryptography.fernet import Fernet
 
-def load_key():
-    with open("secret.key", "rb") as file:
-        return file.read()
+def load_master_hash():
+    try:
+        with open("master.hash", "r") as file:
+            return file.read().strip()
+    except FileNotFoundError:
+        return None
 
-key = load_key()
-cipher = Fernet(key)
+def load_or_create_salt():
+    try:
+        with open("salt.bin", "rb") as file:
+            return file.read()
+    except FileNotFoundError:
+        salt = secrets.token_bytes(16)
+        with open("salt.bin", "wb") as file:
+            file.write(salt)
+        return salt
 
-def add_password():
+def add_password(cipher):
         
     service = input("Enter the service name: ").strip().title()
     username = input("Enter the username: ").strip()
@@ -36,7 +48,7 @@ def add_password():
     save_passwords()
     print(f"Password for {service} added successfully.")
 
-def view_passwords():
+def view_passwords(cipher):
 
     if not passwords:
         print("No saved accounts.")
@@ -60,7 +72,7 @@ def save_passwords():
     with open("passwords.json", "w") as file:
         json.dump(passwords, file)
 
-def search_passwords():
+def search_passwords(cipher):
     if not passwords:
         print("No saved accounts.")
         return
@@ -121,7 +133,7 @@ def delete_password():
     save_passwords()
     print(f"Password for {delete_term} deleted successfully.")
 
-def edit_password():
+def edit_password(cipher):
     if not passwords:
         print("No saved accounts.")
         return
@@ -169,11 +181,47 @@ def generate_password():
     print(f"Generated password: {password}")
     return password
 
+salt = load_or_create_salt()
 passwords = load_passwords()
+
 
 def main():
 
+    stored_master_hash = load_master_hash()
+
+    if stored_master_hash is None:
+        master_password = input("Set a master password: ").strip()
+
+        if not master_password:
+            print("Master password cannot be empty.")
+            return
+
+        confirm_password = input("Confirm master password: ").strip()
+
+        if master_password != confirm_password:
+            print("Passwords do not match.")
+            return
+
+        derived = hashlib.pbkdf2_hmac("sha256", master_password.encode(), salt, 600_000)
+
+        with open("master.hash", "w") as file:
+            file.write(derived.hex())
+
+        print("Master password created.")
+
+    else:
+        master_password = input("Enter the master password: ").strip()
+
+        derived = hashlib.pbkdf2_hmac("sha256", master_password.encode(), salt, 600_000)
+        if derived.hex() != stored_master_hash:
+            print("Incorrect master password. Exiting.")
+            return
+
+    fernet_key = base64.urlsafe_b64encode(derived)
+    cipher = Fernet(fernet_key)
+
     while True:
+
         print("\nPassword Manager")
         print("1. Add password")
         print("2. View saved accounts")
@@ -186,15 +234,15 @@ def main():
         choice = input("Choose an option: ")
 
         if choice == "1":
-            add_password()
+            add_password(cipher)
         elif choice == "2":
-            view_passwords()
+            view_passwords(cipher)
         elif choice == "3":
-            search_passwords()
+            search_passwords(cipher)
         elif choice == "4":
             delete_password()
         elif choice == "5":
-            edit_password()
+            edit_password(cipher)
         elif choice == "6":
             generate_password()
         elif choice == "7":
