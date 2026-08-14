@@ -25,18 +25,27 @@ def load_or_create_salt():
 def add_password(cipher):
         
     service = input("Enter the service name: ").strip().title()
+    if not service:
+        print("Service name cannot be empty.")
+        return
+    
     username = input("Enter the username: ").strip()
+    if not username:
+        print("Username cannot be empty.")
+        return
 
     choice = input("Do you want to generate a password? (y/n): ").strip().lower()
 
     if choice == "y":
         password = generate_password()
-
         if password is None:
             return
         
     else:
         password = input("Enter the password: ").strip()
+        if not password:
+            print("Password cannot be empty.")
+            return
 
     encrypted_password = cipher.encrypt(password.encode()).decode()
     passwords.append({
@@ -65,7 +74,6 @@ def load_passwords():
         with open("passwords.json", "r") as file:
             return json.load(file)
     except FileNotFoundError:
-        print("No saved passwords found.")
         return []
 
 def save_passwords():
@@ -78,6 +86,10 @@ def search_passwords(cipher):
         return
     
     search_term = input("Enter the service name to search: ").strip().title()
+
+    if not search_term:
+        print("Service name cannot be empty.")
+        return
 
     for entry in passwords:
         if entry["service"] == search_term:
@@ -96,6 +108,10 @@ def delete_password():
         return
     
     delete_term = input("Enter the service name to delete: ").strip().title()
+    if not delete_term:
+        print("Service name cannot be empty.")
+        return
+    
     matches = []
 
     for idx, entry in enumerate(passwords):
@@ -181,12 +197,10 @@ def generate_password():
     print(f"Generated password: {password}")
     return password
 
-salt = load_or_create_salt()
-passwords = load_passwords()
+def derive_key(master_password):
+    return hashlib.pbkdf2_hmac("sha256", master_password.encode(), salt, 600_000, dklen=64)
 
-
-def main():
-
+def authenticate_master_password():
     stored_master_hash = load_master_hash()
 
     if stored_master_hash is None:
@@ -197,27 +211,49 @@ def main():
             return
 
         confirm_password = input("Confirm master password: ").strip()
-
+        
         if master_password != confirm_password:
             print("Passwords do not match.")
             return
-
-        derived = hashlib.pbkdf2_hmac("sha256", master_password.encode(), salt, 600_000)
+        
+        derived = derive_key(master_password)
+        
+        verification_hash = derived[:32]
+        encryption_key = derived[32:]
 
         with open("master.hash", "w") as file:
-            file.write(derived.hex())
+            file.write(verification_hash.hex())
 
         print("Master password created.")
+        return encryption_key
 
     else:
-        master_password = input("Enter the master password: ").strip()
+        master_password = input("Enter master password: ").strip()
 
-        derived = hashlib.pbkdf2_hmac("sha256", master_password.encode(), salt, 600_000)
-        if derived.hex() != stored_master_hash:
-            print("Incorrect master password. Exiting.")
+        derived = derive_key(master_password)
+
+        verification_hash = derived[:32]
+        encryption_key = derived[32:]
+
+        if verification_hash.hex() != stored_master_hash:
+            print("Incorrect master password.")
             return
+        
+        return encryption_key
 
-    fernet_key = base64.urlsafe_b64encode(derived)
+
+salt = load_or_create_salt()
+passwords = load_passwords()
+
+
+def main():
+
+    encryption_key = authenticate_master_password()
+
+    if encryption_key is None:
+        return
+
+    fernet_key = base64.urlsafe_b64encode(encryption_key)
     cipher = Fernet(fernet_key)
 
     while True:
@@ -254,4 +290,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
